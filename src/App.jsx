@@ -176,7 +176,7 @@ export default function RetirementCalculator() {
       <h2 style={{ fontSize: 18, fontWeight: 500, marginBottom: 4, color: "#111" }}>은퇴자금 계산기</h2>
       <p style={{ fontSize: 13, color: "#888", marginBottom: 24 }}>적립 후 은퇴 — 두 단계로 시뮬레이션합니다</p>
 
-      <div style={{ fontSize: 11, fontWeight: 500, color: "#1D9E75", letterSpacing: "0.05em", marginBottom: 14 }}>적립 단계</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#0F6E56", background: "#E1F5EE", borderRadius: 8, padding: "8px 12px", marginBottom: 16, display: "inline-block" }}>적립 단계</div>
       <SliderRow label="시작 금액" value={initial} displayValue={fmtKRW(initial)} min={0} max={300000000} step={5000000} onChange={(v) => setInitial(clamp(v, 0, 300000000))} />
       <SliderRow label="월 적립액" value={deposit} displayValue={fmtKRW(deposit)} min={0} max={10000000} step={100000} onChange={(v) => setDeposit(clamp(v, 0, 10000000))} />
       <SliderRow label="적립 기간" value={saveYears} displayValue={`${saveYears}년`} min={1} max={50} step={1} onChange={(v) => setSaveYears(clamp(v, 1, 50))} />
@@ -184,7 +184,7 @@ export default function RetirementCalculator() {
 
       <div style={{ height: 0.5, background: "#e5e5e5", margin: "4px 0 20px" }} />
 
-      <div style={{ fontSize: 11, fontWeight: 500, color: "#3266ad", letterSpacing: "0.05em", marginBottom: 14 }}>인출 단계 (은퇴 후)</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#185FA5", background: "#E6F1FB", borderRadius: 8, padding: "8px 12px", marginBottom: 16, display: "inline-block" }}>인출 단계 (은퇴 후)</div>
       <SliderRow label="인출 기간" value={withdrawYears} displayValue={`${withdrawYears}년`} min={1} max={50} step={1} onChange={(v) => setWithdrawYears(clamp(v, 1, 50))} />
       <SliderRow label="월 인출액" value={withdraw} displayValue={fmtKRW(withdraw)} min={0} max={10000000} step={50000} onChange={(v) => setWithdraw(clamp(v, 0, 20000000))} />
 
