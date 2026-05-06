@@ -8,6 +8,11 @@ const fmtKRW = (n) => {
   return Math.round(n).toLocaleString() + "원";
 };
 
+const fmtKRWFull = (n) => {
+  if (!isFinite(n)) return "0";
+  return Math.round(n).toLocaleString();
+};
+
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
 const SliderRow = ({ label, value, displayValue, min, max, step, onChange }) => (
@@ -64,7 +69,6 @@ export default function RetirementCalculator() {
   const [rate, setRate] = useState(5);
   const [withdrawYears, setWithdrawYears] = useState(30);
   const [withdraw, setWithdraw] = useState(2500000);
-
   const [result, setResult] = useState(null);
 
   const calculate = () => {
@@ -76,11 +80,15 @@ export default function RetirementCalculator() {
     let balance = initial;
     let depletedAt = null;
     const chartData = [];
+    const tableData = [];
     let pivotBalance = 0;
+    let totalInvested = initial;
 
     for (let m = 1; m <= totalMonths; m++) {
-      if (m <= saveMonths) {
+      const isSaving = m <= saveMonths;
+      if (isSaving) {
         balance = balance * (1 + mr) + deposit;
+        totalInvested += deposit;
         if (m === saveMonths) pivotBalance = Math.max(0, balance);
       } else {
         balance = balance * (1 + mr) - withdraw;
@@ -90,7 +98,6 @@ export default function RetirementCalculator() {
 
       const b = Math.max(0, balance);
       const yr = Math.ceil(m / 12);
-      const isSaving = m <= saveMonths;
 
       if (m % 3 === 0 || m === totalMonths || m === saveMonths) {
         chartData.push({
@@ -99,9 +106,29 @@ export default function RetirementCalculator() {
           withdrawing: !isSaving ? b : null,
         });
       }
+
+      if (m % 12 === 0) {
+        if (isSaving) {
+          const inv = Math.min(totalInvested, b);
+          tableData.push({
+            year: yr,
+            phase: "적립",
+            invested: inv,
+            profit: b - inv,
+            balance: b,
+          });
+        } else {
+          tableData.push({
+            year: yr,
+            phase: "인출",
+            invested: null,
+            profit: null,
+            balance: b,
+          });
+        }
+      }
     }
 
-    // 두 구간 연결: pivot point에 양쪽 값 모두 넣기
     const pivotIdx = chartData.findIndex((d) => d.year === saveYears && d.saving !== null);
     if (pivotIdx !== -1) {
       chartData[pivotIdx] = { ...chartData[pivotIdx], withdrawing: chartData[pivotIdx].saving };
@@ -110,16 +137,9 @@ export default function RetirementCalculator() {
     const finalBal = Math.max(0, balance);
 
     let statusText, statusColor;
-    if (depletedAt) {
-      statusText = "고갈";
-      statusColor = "#A32D2D";
-    } else if (finalBal < withdraw * 12) {
-      statusText = "주의";
-      statusColor = "#BA7517";
-    } else {
-      statusText = "안정적";
-      statusColor = "#0F6E56";
-    }
+    if (depletedAt) { statusText = "고갈"; statusColor = "#A32D2D"; }
+    else if (finalBal < withdraw * 12) { statusText = "주의"; statusColor = "#BA7517"; }
+    else { statusText = "안정적"; statusColor = "#0F6E56"; }
 
     let depletionText = "고갈 없음";
     let depletionColor = "#0F6E56";
@@ -131,11 +151,28 @@ export default function RetirementCalculator() {
       depletionColor = "#A32D2D";
     }
 
-    setResult({ finalBal, statusText, statusColor, depletionText, depletionColor, chartData, pivotBalance });
+    setResult({ finalBal, statusText, statusColor, depletionText, depletionColor, chartData, pivotBalance, tableData });
   };
 
+  const thStyle = {
+    fontSize: 11,
+    color: "#888",
+    fontWeight: 500,
+    padding: "8px 6px",
+    textAlign: "right",
+    borderBottom: "1px solid #e5e5e5",
+    whiteSpace: "nowrap",
+  };
+  const tdStyle = (align) => ({
+    fontSize: 12,
+    padding: "7px 6px",
+    textAlign: align || "right",
+    borderBottom: "0.5px solid #f0f0f0",
+    whiteSpace: "nowrap",
+  });
+
   return (
-    <div style={{ padding: "20px 8px 40px", maxWidth: "100%", margin: 0, fontFamily: "-apple-system, 'Apple SD Gothic Neo', sans-serif", background: "#ffffff", color: "#111111", minHeight: "100vh" }}>
+    <div style={{ padding: "20px 3% 40px", maxWidth: "100%", margin: 0, fontFamily: "-apple-system, 'Apple SD Gothic Neo', sans-serif", background: "#ffffff", color: "#111111", minHeight: "100vh" }}>
       <h2 style={{ fontSize: 18, fontWeight: 500, marginBottom: 4, color: "#111" }}>은퇴자금 계산기</h2>
       <p style={{ fontSize: 13, color: "#888", marginBottom: 24 }}>적립 후 은퇴 — 두 단계로 시뮬레이션합니다</p>
 
@@ -155,18 +192,7 @@ export default function RetirementCalculator() {
 
       <button
         onClick={calculate}
-        style={{
-          width: "100%",
-          padding: 14,
-          background: "#111",
-          color: "#fff",
-          border: "none",
-          borderRadius: 12,
-          fontSize: 15,
-          fontWeight: 500,
-          cursor: "pointer",
-          letterSpacing: "-0.01em",
-        }}
+        style={{ width: "100%", padding: 14, background: "#111", color: "#fff", border: "none", borderRadius: 12, fontSize: 15, fontWeight: 500, cursor: "pointer", letterSpacing: "-0.01em" }}
       >
         계산하기
       </button>
@@ -212,6 +238,39 @@ export default function RetirementCalculator() {
                 <span style={{ width: 10, height: 3, borderRadius: 2, background: "#3266ad", display: "inline-block" }} />
                 인출 구간
               </span>
+            </div>
+          </div>
+
+          {/* 연도별 표 */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 10 }}>연도별 상세</div>
+            <div style={{ overflowX: "auto", borderRadius: 12, border: "0.5px solid #e5e5e5" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                <thead>
+                  <tr style={{ background: "#f5f5f3" }}>
+                    <th style={{ ...thStyle, textAlign: "center", width: "14%" }}>년차</th>
+                    <th style={{ ...thStyle, width: "14%" }}>구분</th>
+                    <th style={{ ...thStyle, width: "24%" }}>원금 (₩)</th>
+                    <th style={{ ...thStyle, width: "24%" }}>수익 (₩)</th>
+                    <th style={{ ...thStyle, width: "24%" }}>잔액 (₩)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.tableData.map((row, i) => {
+                    const isSave = row.phase === "적립";
+                    const isRetireStart = i > 0 && result.tableData[i - 1].phase === "적립" && !isSave;
+                    return (
+                      <tr key={i} style={{ background: isRetireStart ? "#f0f7ff" : i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                        <td style={{ ...tdStyle("center"), fontWeight: isRetireStart ? 600 : 400 }}>{row.year}</td>
+                        <td style={{ ...tdStyle("center"), color: isSave ? "#1D9E75" : "#3266ad", fontSize: 11 }}>{row.phase}</td>
+                        <td style={{ ...tdStyle(), color: "#444" }}>{isSave ? fmtKRWFull(row.invested) : "—"}</td>
+                        <td style={{ ...tdStyle(), color: isSave ? "#1D9E75" : "#888" }}>{isSave ? "+" + fmtKRWFull(row.profit) : "—"}</td>
+                        <td style={{ ...tdStyle(), fontWeight: 500, color: row.balance === 0 ? "#A32D2D" : "#111" }}>{fmtKRWFull(row.balance)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         </>
