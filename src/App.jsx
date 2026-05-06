@@ -1,204 +1,221 @@
-import { useMemo, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { useState } from "react";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
-// --- helpers ---
-const formatKRW = (n) => {
+const fmtKRW = (n) => {
   if (!isFinite(n)) return "0원";
-  if (n >= 1e8) return `${(n / 1e8).toFixed(1)}억원`;
-  if (n >= 1e4) return `${Math.round(n / 1e4)}만원`;
-  return `${Math.round(n).toLocaleString()}원`;
-};
-
-const parseNumber = (v) => {
-  const n = Number(String(v).replace(/[^0-9.]/g, ""));
-  return isNaN(n) ? 0 : n;
+  if (n >= 1e8) return (n / 1e8).toFixed(1) + "억원";
+  if (n >= 1e4) return Math.round(n / 1e4) + "만원";
+  return Math.round(n).toLocaleString() + "원";
 };
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
-// --- UI primitives (mobile friendly) ---
-const Card = ({ children }) => (
-  <div style={{ border: "1px solid #e5e7eb", padding: 16, borderRadius: 16, background: "#fff" }}>{children}</div>
+const SliderRow = ({ label, value, displayValue, min, max, step, onChange }) => (
+  <div style={{ marginBottom: 18 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+      <span style={{ fontSize: 13, color: "#666" }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: 500, color: "#111" }}>{displayValue}</span>
+    </div>
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      style={{ width: "100%", accentColor: "#111" }}
+    />
+  </div>
 );
 
-const Label = ({ children }) => (
-  <div style={{ fontSize: 13, color: "#666", marginBottom: 6 }}>{children}</div>
+const MetricCard = ({ label, value, color, fullWidth }) => (
+  <div style={{
+    background: "#f5f5f3",
+    borderRadius: 12,
+    padding: "14px 16px",
+    gridColumn: fullWidth ? "1/-1" : undefined,
+  }}>
+    <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>{label}</div>
+    <div style={{ fontSize: 20, fontWeight: 500, color: color || "#111" }}>{value}</div>
+  </div>
 );
 
-const Row = ({ children }) => (
-  <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", marginBottom: 10 }}>{children}</div>
-);
-
-const NumberInput = ({ value, onChange, placeholder }) => (
-  <input
-    inputMode="numeric"
-    value={value}
-    placeholder={placeholder}
-    onChange={(e) => onChange(parseNumber(e.target.value))}
-    style={{
-      padding: 12,
-      width: "100%",
-      fontSize: 16,
-      borderRadius: 10,
-      border: "1px solid #ddd",
-    }}
-  />
-);
-
-const Slider = ({ value, min, max, step = 1, onChange }) => (
-  <input
-    type="range"
-    min={min}
-    max={max}
-    step={step}
-    value={value}
-    onChange={(e) => onChange(Number(e.target.value))}
-    style={{ width: "100%" }}
-  />
-);
-
-const Button = ({ children, ...props }) => (
-  <button
-    {...props}
-    style={{
-      padding: 14,
-      width: "100%",
-      fontSize: 16,
-      borderRadius: 12,
-      background: "black",
-      color: "white",
-      fontWeight: "bold",
-      marginTop: 6,
-    }}
-  >
-    {children}
-  </button>
-);
+const CustomTooltip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  const val = payload[0]?.value ?? payload[1]?.value ?? 0;
+  return (
+    <div style={{
+      background: "#fff",
+      border: "0.5px solid #e5e5e5",
+      borderRadius: 8,
+      padding: "8px 12px",
+      fontSize: 13,
+    }}>
+      <div style={{ color: "#888", marginBottom: 2 }}>{label}년차</div>
+      <div style={{ fontWeight: 500 }}>{fmtKRW(val)}</div>
+    </div>
+  );
+};
 
 export default function RetirementCalculator() {
-  // inputs
-  const [monthlyDeposit, setMonthlyDeposit] = useState(1000000);
-  const [years, setYears] = useState(25);
+  const [initial, setInitial] = useState(0);
+  const [deposit, setDeposit] = useState(1000000);
+  const [saveYears, setSaveYears] = useState(25);
   const [rate, setRate] = useState(5);
-  const [withdrawal, setWithdrawal] = useState(2500000);
-  const [retireAfterYears, setRetireAfterYears] = useState(20);
+  const [withdrawYears, setWithdrawYears] = useState(30);
+  const [withdraw, setWithdraw] = useState(2500000);
 
-  // results
-  const [data, setData] = useState([]);
-  const [endBalance, setEndBalance] = useState(0);
-  const [depletionMonth, setDepletionMonth] = useState(null);
-
-  const monthlyRate = useMemo(() => rate / 100 / 12, [rate]);
+  const [result, setResult] = useState(null);
 
   const calculate = () => {
-    let balance = 0;
-    const res = [];
-    const retireStart = retireAfterYears * 12;
+    const mr = Math.pow(1 + rate / 100, 1 / 12) - 1;
+    const saveMonths = saveYears * 12;
+    const withdrawMonths = withdrawYears * 12;
+    const totalMonths = saveMonths + withdrawMonths;
 
+    let balance = initial;
     let depletedAt = null;
+    const chartData = [];
+    let pivotBalance = 0;
 
-    for (let m = 1; m <= years * 12; m++) {
-      balance = balance * (1 + monthlyRate) + monthlyDeposit;
-
-      if (m >= retireStart) {
-        balance -= withdrawal;
+    for (let m = 1; m <= totalMonths; m++) {
+      if (m <= saveMonths) {
+        balance = balance * (1 + mr) + deposit;
+        if (m === saveMonths) pivotBalance = Math.max(0, balance);
+      } else {
+        balance = balance * (1 + mr) - withdraw;
       }
 
-      if (balance <= 0 && depletedAt === null) {
-        depletedAt = m;
-      }
+      if (balance <= 0 && depletedAt === null) depletedAt = m;
 
-      res.push({ month: m, balance: Math.max(0, balance) });
+      const b = Math.max(0, balance);
+      const yr = Math.ceil(m / 12);
+      const isSaving = m <= saveMonths;
+
+      if (m % 3 === 0 || m === totalMonths || m === saveMonths) {
+        chartData.push({
+          year: yr,
+          saving: isSaving ? b : null,
+          withdrawing: !isSaving ? b : null,
+        });
+      }
     }
 
-    setData(res);
-    setEndBalance(res[res.length - 1]?.balance || 0);
-    setDepletionMonth(depletedAt);
+    // 두 구간 연결: pivot point에 양쪽 값 모두 넣기
+    const pivotIdx = chartData.findIndex((d) => d.year === saveYears && d.saving !== null);
+    if (pivotIdx !== -1) {
+      chartData[pivotIdx] = { ...chartData[pivotIdx], withdrawing: chartData[pivotIdx].saving };
+    }
+
+    const finalBal = Math.max(0, balance);
+
+    let statusText, statusColor;
+    if (depletedAt) {
+      statusText = "고갈";
+      statusColor = "#A32D2D";
+    } else if (finalBal < withdraw * 12) {
+      statusText = "주의";
+      statusColor = "#BA7517";
+    } else {
+      statusText = "안정적";
+      statusColor = "#0F6E56";
+    }
+
+    let depletionText = "고갈 없음";
+    let depletionColor = "#0F6E56";
+    if (depletedAt) {
+      const relMonth = depletedAt - saveMonths;
+      const y = Math.floor(relMonth / 12);
+      const mo = relMonth % 12;
+      depletionText = `은퇴 후 ${y}년 ${mo}개월 시점`;
+      depletionColor = "#A32D2D";
+    }
+
+    setResult({ finalBal, statusText, statusColor, depletionText, depletionColor, chartData, pivotBalance });
   };
 
-  const depletionText = useMemo(() => {
-    if (!depletionMonth) return "자산 고갈 없음";
-    const y = Math.floor(depletionMonth / 12);
-    const m = depletionMonth % 12;
-    return `${y}년 ${m}개월 시점 고갈`;
-  }, [depletionMonth]);
-
-  const status = useMemo(() => {
-    if (!data.length) return null;
-    if (depletionMonth) return { text: "⚠️ 자산이 중간에 고갈됩니다", color: "#dc2626" };
-    if (endBalance < withdrawal * 12) return { text: "주의: 말년에 여유가 적습니다", color: "#f59e0b" };
-    return { text: "👍 안정적으로 유지됩니다", color: "#16a34a" };
-  }, [data, depletionMonth, endBalance, withdrawal]);
-
   return (
-    <div style={{ padding: 16, maxWidth: 480, margin: "0 auto", fontFamily: "-apple-system, sans-serif" }}>
-      <h2 style={{ fontSize: 20, fontWeight: "bold", marginBottom: 6 }}>은퇴자금 계산기</h2>
-      <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
-        슬라이더로 빠르게 조건을 바꾸고, 자산 고갈 여부를 확인하세요
-      </p>
+    <div style={{ padding: "20px 16px 40px", maxWidth: 420, margin: "0 auto", fontFamily: "-apple-system, 'Apple SD Gothic Neo', sans-serif" }}>
+      <h2 style={{ fontSize: 18, fontWeight: 500, marginBottom: 4, color: "#111" }}>은퇴자금 계산기</h2>
+      <p style={{ fontSize: 13, color: "#888", marginBottom: 24 }}>적립 후 은퇴 — 두 단계로 시뮬레이션합니다</p>
 
-      <Card>
-        <Label>월 저축액</Label>
-        <Row>
-          <NumberInput value={monthlyDeposit} onChange={(v) => setMonthlyDeposit(clamp(v, 0, 50000000))} placeholder="원" />
-          <div style={{ fontWeight: 600 }}>{formatKRW(monthlyDeposit)}</div>
-        </Row>
-        <Slider value={monthlyDeposit} min={0} max={5000000} step={10000} onChange={setMonthlyDeposit} />
+      <div style={{ fontSize: 11, fontWeight: 500, color: "#1D9E75", letterSpacing: "0.05em", marginBottom: 14 }}>적립 단계</div>
+      <SliderRow label="시작 금액" value={initial} displayValue={fmtKRW(initial)} min={0} max={300000000} step={5000000} onChange={(v) => setInitial(clamp(v, 0, 300000000))} />
+      <SliderRow label="월 적립액" value={deposit} displayValue={fmtKRW(deposit)} min={0} max={10000000} step={100000} onChange={(v) => setDeposit(clamp(v, 0, 10000000))} />
+      <SliderRow label="적립 기간" value={saveYears} displayValue={`${saveYears}년`} min={1} max={50} step={1} onChange={(v) => setSaveYears(clamp(v, 1, 50))} />
+      <SliderRow label="연 수익률" value={rate} displayValue={`${rate.toFixed(1)}%`} min={0} max={30} step={0.1} onChange={(v) => setRate(clamp(v, 0, 30))} />
 
-        <Label>투자 기간 (년)</Label>
-        <Row>
-          <NumberInput value={years} onChange={(v) => setYears(clamp(v, 1, 60))} placeholder="년" />
-          <div style={{ fontWeight: 600 }}>{years}년</div>
-        </Row>
-        <Slider value={years} min={1} max={60} step={1} onChange={setYears} />
+      <div style={{ height: 0.5, background: "#e5e5e5", margin: "4px 0 20px" }} />
 
-        <Label>연 수익률 (%)</Label>
-        <Row>
-          <NumberInput value={rate} onChange={(v) => setRate(clamp(v, 0, 15))} placeholder="%" />
-          <div style={{ fontWeight: 600 }}>{rate}%</div>
-        </Row>
-        <Slider value={rate} min={0} max={15} step={0.1} onChange={setRate} />
+      <div style={{ fontSize: 11, fontWeight: 500, color: "#3266ad", letterSpacing: "0.05em", marginBottom: 14 }}>인출 단계 (은퇴 후)</div>
+      <SliderRow label="인출 기간" value={withdrawYears} displayValue={`${withdrawYears}년`} min={1} max={50} step={1} onChange={(v) => setWithdrawYears(clamp(v, 1, 50))} />
+      <SliderRow label="월 인출액" value={withdraw} displayValue={fmtKRW(withdraw)} min={0} max={10000000} step={50000} onChange={(v) => setWithdraw(clamp(v, 0, 20000000))} />
 
-        <Label>은퇴 시작 (몇 년 후)</Label>
-        <Row>
-          <NumberInput value={retireAfterYears} onChange={(v) => setRetireAfterYears(clamp(v, 0, years))} placeholder="년" />
-          <div style={{ fontWeight: 600 }}>{retireAfterYears}년 후</div>
-        </Row>
-        <Slider value={retireAfterYears} min={0} max={years} step={1} onChange={setRetireAfterYears} />
+      <div style={{ height: 0.5, background: "#e5e5e5", margin: "4px 0 20px" }} />
 
-        <Label>월 인출액 (은퇴 후)</Label>
-        <Row>
-          <NumberInput value={withdrawal} onChange={(v) => setWithdrawal(clamp(v, 0, 20000000))} placeholder="원" />
-          <div style={{ fontWeight: 600 }}>{formatKRW(withdrawal)}</div>
-        </Row>
-        <Slider value={withdrawal} min={0} max={10000000} step={10000} onChange={setWithdrawal} />
+      <button
+        onClick={calculate}
+        style={{
+          width: "100%",
+          padding: 14,
+          background: "#111",
+          color: "#fff",
+          border: "none",
+          borderRadius: 12,
+          fontSize: 15,
+          fontWeight: 500,
+          cursor: "pointer",
+          letterSpacing: "-0.01em",
+        }}
+      >
+        계산하기
+      </button>
 
-        <Button onClick={calculate}>계산하기</Button>
-      </Card>
-
-      {(data.length > 0) && (
-        <Card>
-          <div style={{ display: "grid", gap: 6 }}>
-            <div style={{ fontWeight: 700 }}>결과 요약</div>
-            <div>최종 자산: <b>{formatKRW(endBalance)}</b></div>
-            <div>자산 상태: <b style={{ color: status?.color }}>{status?.text}</b></div>
-            <div>고갈 시점: <b>{depletionText}</b></div>
+      {result && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
+            <MetricCard label="은퇴 시점 자산" value={fmtKRW(result.pivotBalance)} />
+            <MetricCard label="자산 상태" value={result.statusText} color={result.statusColor} />
+            <MetricCard label="인출 종료 후 잔액" value={fmtKRW(result.finalBal)} fullWidth />
+            <MetricCard label="고갈 시점" value={result.depletionText} color={result.depletionColor} fullWidth />
           </div>
-        </Card>
-      )}
 
-      <Card>
-        <div style={{ width: "100%", height: 260 }}>
-          <ResponsiveContainer>
-            <LineChart data={data}>
-              <XAxis dataKey="month" hide />
-              <YAxis hide />
-              <Tooltip formatter={(v) => formatKRW(v)} labelFormatter={(l) => `${l}개월`} />
-              <Line type="monotone" dataKey="balance" stroke="#000" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
+          <div style={{ marginTop: 16, background: "#f5f5f3", borderRadius: 16, padding: "16px 16px 12px" }}>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>자산 변화 그래프</div>
+            <div style={{ width: "100%", height: 200 }}>
+              <ResponsiveContainer>
+                <AreaChart data={result.chartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gradSaving" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#1D9E75" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#1D9E75" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gradWithdraw" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3266ad" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#3266ad" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="year" tick={{ fontSize: 11, fill: "#aaa" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}년`} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 11, fill: "#aaa" }} tickLine={false} axisLine={false} tickFormatter={fmtKRW} width={52} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area type="monotone" dataKey="saving" stroke="#1D9E75" strokeWidth={2} fill="url(#gradSaving)" dot={false} connectNulls={false} />
+                  <Area type="monotone" dataKey="withdrawing" stroke="#3266ad" strokeWidth={2} fill="url(#gradWithdraw)" dot={false} connectNulls={false} strokeDasharray="5 3" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 11, color: "#999" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ width: 10, height: 3, borderRadius: 2, background: "#1D9E75", display: "inline-block" }} />
+                적립 구간
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ width: 10, height: 3, borderRadius: 2, background: "#3266ad", display: "inline-block" }} />
+                인출 구간
+              </span>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
