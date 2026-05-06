@@ -135,7 +135,7 @@ export default function RetirementCalculator() {
   };
 
   return (
-    <div style={{ padding: "20px 16px 40px", maxWidth: 420, margin: "0 auto", fontFamily: "-apple-system, 'Apple SD Gothic Neo', sans-serif", background: "#ffffff", color: "#111111", minHeight: "100vh" }}>
+    <div style={{ padding: "20px 16px 40px", maxWidth: 600, margin: "0 auto", fontFamily: "-apple-system, 'Apple SD Gothic Neo', sans-serif", background: "#ffffff", color: "#111111", minHeight: "100vh" }}>
       <h2 style={{ fontSize: 18, fontWeight: 500, marginBottom: 4, color: "#111" }}>은퇴자금 계산기</h2>
       <p style={{ fontSize: 13, color: "#888", marginBottom: 24 }}>적립 후 은퇴 — 두 단계로 시뮬레이션합니다</p>
 
